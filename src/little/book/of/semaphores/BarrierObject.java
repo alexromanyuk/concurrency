@@ -1,6 +1,8 @@
+package little.book.of.semaphores;
+
 import java.util.concurrent.Semaphore;
 
-//FIXME BarrierObject
+//FIXME little.book.of.semaphores.BarrierObject
 public class BarrierObject {
 	private static Semaphore mutex = new Semaphore(1);
 	private static Semaphore turnstile = new Semaphore(0);

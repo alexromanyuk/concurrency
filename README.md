@@ -1,2 +1,1 @@
-concurrency
-===========
+Concurrency playground for practice. 

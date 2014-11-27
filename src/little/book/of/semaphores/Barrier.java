@@ -1,3 +1,5 @@
+package little.book.of.semaphores;
+
 import java.util.concurrent.Semaphore;
 
 
@@ -68,7 +70,7 @@ public class Barrier {
 							if (count == 0) {
 								turnstile.acquire();
 								turnstile2.release();
-								System.out.printf("Barrier locked, with count: %s \n", count);
+								System.out.printf("little.book.of.semaphores.Barrier locked, with count: %s \n", count);
 							}
 							else count--;
 						mutex.release();

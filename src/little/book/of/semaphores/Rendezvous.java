@@ -1,3 +1,5 @@
+package little.book.of.semaphores;
+
 import java.util.concurrent.Semaphore;
 
 //TODO read page 15 about inefficient solution
