@@ -1,13 +1,8 @@
 package the.art.of.multiprocessor.programming.locks;
 
-import sun.reflect.generics.reflectiveObjects.NotImplementedException;
-
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.locks.Condition;
-import java.util.concurrent.locks.Lock;
 
-public class TASLock implements Lock {
+public class TASLock extends AbstractLock {
 
     private final AtomicBoolean lock = new AtomicBoolean(false);
 
@@ -21,23 +16,4 @@ public class TASLock implements Lock {
         lock.set(false);
     }
 
-    @Override
-    public void lockInterruptibly() throws InterruptedException {
-        throw new NotImplementedException();
-    }
-
-    @Override
-    public boolean tryLock() {
-        throw new NotImplementedException();
-    }
-
-    @Override
-    public boolean tryLock(long time, TimeUnit unit) throws InterruptedException {
-        throw new NotImplementedException();
-    }
-
-    @Override
-    public Condition newCondition() {
-        throw new NotImplementedException();
-    }
 }

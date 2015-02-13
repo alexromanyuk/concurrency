@@ -11,8 +11,8 @@ public class BackoffLock {
             this.maxDelay = maxDelay;
         }
 
-        public void backoff() {
-            Thread.sleep();
+        public void backoff() throws InterruptedException {
+            Thread.sleep(1);
         }
     }
 }
