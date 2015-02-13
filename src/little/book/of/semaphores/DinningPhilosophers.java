@@ -3,7 +3,6 @@ package little.book.of.semaphores;
 import java.util.Arrays;
 import java.util.Random;
 
-//Broken
 public class DinningPhilosophers {
 
     private static class Stick {
@@ -55,9 +54,12 @@ public class DinningPhilosophers {
         }
 
         public void think() throws InterruptedException {
-            left.putStick();
-            right.putStick();
-            System.out.println(name + " thinks...");
+            synchronized (right) {
+                left.putStick();
+                right.putStick();
+                System.out.println(name + " thinks...");
+            }
+
             Thread.sleep(random.nextInt(1000));
         }
 
