@@ -3,3 +3,8 @@
 bin
 .classpath
 .project
+build
+concurrency.iml
+concurrency.ipr
+concurrency.iws
+out
