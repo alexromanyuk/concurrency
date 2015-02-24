@@ -7,6 +7,8 @@ import java.util.concurrent.TimeUnit;
 
 public class DinningPhilosophersAkka {
 
+    protected static final int personsNumber = 5;
+
     private static class TakeSticks implements Serializable {
         public final int philosopherID;
         TakeSticks(int philosopherID) { this.philosopherID = philosopherID; }
@@ -17,12 +19,12 @@ public class DinningPhilosophersAkka {
         PutStick(Stick stick) { this.stick = stick; }
     }
 
-    private static class StickIsBusy {}
-
     private static class Stick implements Serializable {
         public final int id;
         public Stick(int id) { this.id = id; }
     }
+
+    private static class LetsDinner implements Serializable {}
 
     public static class PhilosopherActor extends UntypedActor {
         private final int philosopherID;
@@ -36,21 +38,14 @@ public class DinningPhilosophersAkka {
             this.philosopherID = philosopherID;
         }
 
-        private void think() {
-            putSticks();
-            sleep(50);
-        }
-
-        private void eat() {
-            table.tell(new TakeSticks(philosopherID), self());
-        }
-
         private void sleep(int millis) {
             context().system().scheduler().scheduleOnce(
                     Duration.create(millis, TimeUnit.MILLISECONDS),
                     ActorRef.noSender(), null,
                     context().system().dispatcher(), null);
         }
+
+        private void takeSticks() { table.tell(new TakeSticks(philosopherID), self()); }
 
         private void putSticks() {
             if (left != null) {
@@ -64,18 +59,33 @@ public class DinningPhilosophersAkka {
             }
         }
 
+        private void eat() {
+            //Try to acquire sticks
+            while (left == null || right == null) { takeSticks(); }
+            System.out.printf("Actor #%s eating... \n\r", philosopherID);
+            putSticks();
+        }
+
+        private void think() {
+            putSticks();
+            System.out.printf("Actor %s thinking \n\r", philosopherID);
+            sleep(50);
+        }
+
         @Override
         public void onReceive(Object message) throws Exception {
-            if (message instanceof Stick) {
+            if (message instanceof LetsDinner) {
+                eat();
+                think();
+            }
+            else if (message instanceof Stick) {
                 Stick stick = ((Stick)message);
-                System.out.printf("Got stick #%", stick.id);
+                System.out.printf("Pick up stick #%s \n\r", stick.id);
             }
         }
     }
 
     public static class TableActor extends UntypedActor {
-
-        private final int personsNumber = 5;
         private final Stick[] sticks;
 
         public TableActor() {
@@ -92,11 +102,18 @@ public class DinningPhilosophersAkka {
 
             if (o instanceof TakeSticks) {
                 int philosopherID = ((TakeSticks) o).philosopherID;
-                Stick leftStick = sticks[philosopherID % (personsNumber - 1)];
-//                Stick rightStick = sticks[philosopherID % (personsNumber - 1)]; TODO
-                sticks[philosopherID] = null;
+
+                int leftStickID = (philosopherID + personsNumber - 1) % (personsNumber - 1);
+                int rightStickID = (philosopherID + personsNumber) % (personsNumber - 1);
+
+                Stick leftStick = sticks[leftStickID];
+                Stick rightStick = sticks[rightStickID];
+
+                sticks[leftStickID] = null;
+                sticks[rightStickID] = null;
 
                 getSender().tell(leftStick, self());
+                getSender().tell(rightStick, self());
             }
 
             if (o instanceof PutStick) {
@@ -110,9 +127,18 @@ public class DinningPhilosophersAkka {
         ActorSystem system = ActorSystem.create();
 
         ActorRef table = system.actorOf(Props.create(TableActor.class), "table");
-        ActorRef philosopher = system.actorOf(Props.create(PhilosopherActor.class), "Sasha");
+        ActorRef philosophers[] = new ActorRef[personsNumber];
 
-//        table.tell(new TakeSticks(), philosopher); TODO
-        system.shutdown();
+        for (int i = 0; i < personsNumber; i++) {
+            philosophers[i] = system.actorOf(Props.create(PhilosopherActor.class, i, table), new Integer(i).toString());
+        }
+
+        while (true) {
+            for (ActorRef philosopher : philosophers) {
+                philosopher.tell(new LetsDinner(), ActorRef.noSender());
+            }
+        }
+
+//        system.shutdown();
     }
 }
