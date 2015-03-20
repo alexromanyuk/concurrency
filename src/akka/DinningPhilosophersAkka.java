@@ -1,17 +1,23 @@
 package akka;
 
 import akka.actor.*;
+import akka.pattern.Patterns;
+import akka.util.Timeout;
+import scala.concurrent.Await;
 import scala.concurrent.duration.Duration;
 import java.io.Serializable;
+import scala.concurrent.Future;
+
 import java.util.concurrent.TimeUnit;
 
 public class DinningPhilosophersAkka {
 
-    protected static final int personsNumber = 5;
+    private static final int NUMBER_OF_PERSONS = 5;
+    private static final int NUMBER_OF_TRIES_TILL_DEATH = 100;
 
-    private static class TakeSticks implements Serializable {
-        public final int philosopherID;
-        TakeSticks(int philosopherID) { this.philosopherID = philosopherID; }
+    private static class TakeStick implements Serializable {
+        public final int stickID;
+        TakeStick(int stickID) { this.stickID = stickID; }
     }
 
     private static class PutStick implements Serializable {
@@ -22,6 +28,11 @@ public class DinningPhilosophersAkka {
     private static class Stick implements Serializable {
         public final int id;
         public Stick(int id) { this.id = id; }
+    }
+
+    private static class StickNotAvailable implements Serializable {
+        public final int id;
+        StickNotAvailable(int id) { this.id = id; }
     }
 
     private static class LetsDinner implements Serializable {}
@@ -45,7 +56,32 @@ public class DinningPhilosophersAkka {
                     context().system().dispatcher(), null);
         }
 
-        private void takeSticks() { table.tell(new TakeSticks(philosopherID), self()); }
+        /**
+         * @param stickID
+         * @param isLeft true = left, false = right
+         * @return true, if stick was received; false otherwise
+         * @throws Exception
+         */
+        private boolean tryToTakeStick(int stickID, boolean isLeft) throws Exception {
+            Timeout timeout = new Timeout(1, TimeUnit.MINUTES);
+            Future<Object> future = Patterns.ask(table, new TakeStick(stickID), timeout);
+            Object result = Await.result(future, timeout.duration());
+
+            if (result instanceof Stick) {
+                if (isLeft) { this.left = (Stick) result; }
+                else { this.right = (Stick) result; }
+
+                System.out.printf("Actor %s picked up stick #%s \n\r", philosopherID, ((Stick)result).id);
+                return true;
+
+            } else if (result instanceof StickNotAvailable) {
+                stickID = ((StickNotAvailable) result).id;
+                System.out.printf("Actor %s tried to take stick %s, but it's busy \n\r", philosopherID, stickID);
+                putSticks();
+            }
+
+            return false;
+        }
 
         private void putSticks() {
             if (left != null) {
@@ -59,9 +95,26 @@ public class DinningPhilosophersAkka {
             }
         }
 
-        private void eat() {
-            //Try to acquire sticks
-            while (left == null || right == null) { takeSticks(); }
+        private boolean takeBothSticks() throws Exception {
+            final int leftStickID = (philosopherID + NUMBER_OF_PERSONS - 1) % (NUMBER_OF_PERSONS - 1);
+            final int rightStickID = (philosopherID + NUMBER_OF_PERSONS) % (NUMBER_OF_PERSONS - 1);
+
+            boolean tookLeft = tryToTakeStick(leftStickID, true);
+            boolean tookRight = tryToTakeStick(rightStickID, false);
+
+            return tookLeft && tookRight;
+        }
+
+        private void eat() throws Exception {
+            long numOfTries = 0 ;
+
+            while (!(takeBothSticks())) {
+                if (numOfTries > NUMBER_OF_TRIES_TILL_DEATH) {
+                    System.out.println(String.format("Actor %s died hungry...", philosopherID));
+                    context().stop(self());
+                }
+                numOfTries++;
+            }
             System.out.printf("Actor #%s eating... \n\r", philosopherID);
             putSticks();
         }
@@ -78,10 +131,6 @@ public class DinningPhilosophersAkka {
                 eat();
                 think();
             }
-            else if (message instanceof Stick) {
-                Stick stick = ((Stick)message);
-                System.out.printf("Pick up stick #%s \n\r", stick.id);
-            }
         }
     }
 
@@ -89,9 +138,9 @@ public class DinningPhilosophersAkka {
         private final Stick[] sticks;
 
         public TableActor() {
-            sticks = new Stick[personsNumber];
+            sticks = new Stick[NUMBER_OF_PERSONS];
 
-            for (int i = 0; i < personsNumber; i++) {
+            for (int i = 0; i < NUMBER_OF_PERSONS; i++) {
                 Stick stick = new Stick(i);
                 sticks[i] = stick;
             }
@@ -100,25 +149,25 @@ public class DinningPhilosophersAkka {
         @Override
         public void onReceive(Object o) throws Exception {
 
-            if (o instanceof TakeSticks) {
-                int philosopherID = ((TakeSticks) o).philosopherID;
-
-                int leftStickID = (philosopherID + personsNumber - 1) % (personsNumber - 1);
-                int rightStickID = (philosopherID + personsNumber) % (personsNumber - 1);
-
-                Stick leftStick = sticks[leftStickID];
-                Stick rightStick = sticks[rightStickID];
-
-                sticks[leftStickID] = null;
-                sticks[rightStickID] = null;
-
-                getSender().tell(leftStick, self());
-                getSender().tell(rightStick, self());
+            if (o instanceof TakeStick) {
+                int stickID = ((TakeStick) o).stickID;
+                checkAndSendStick(stickID);
             }
 
             if (o instanceof PutStick) {
                 Stick stick = ((PutStick) o).stick;
                 sticks[stick.id] = stick;
+            }
+        }
+
+        private void checkAndSendStick(int stickID) {
+            Stick stick = sticks[stickID];
+
+            if (stick == null) {
+                getSender().tell(new StickNotAvailable(stickID), self());
+            } else {
+                sticks[stickID] = null;
+                getSender().tell(stick, self());
             }
         }
     }
@@ -127,18 +176,15 @@ public class DinningPhilosophersAkka {
         ActorSystem system = ActorSystem.create();
 
         ActorRef table = system.actorOf(Props.create(TableActor.class), "table");
-        ActorRef philosophers[] = new ActorRef[personsNumber];
+        ActorRef philosophers[] = new ActorRef[NUMBER_OF_PERSONS];
 
-        for (int i = 0; i < personsNumber; i++) {
+        for (int i = 0; i < NUMBER_OF_PERSONS; i++) {
             philosophers[i] = system.actorOf(Props.create(PhilosopherActor.class, i, table), new Integer(i).toString());
         }
 
-        while (true) {
-            for (ActorRef philosopher : philosophers) {
-                philosopher.tell(new LetsDinner(), ActorRef.noSender());
-            }
+        for (ActorRef philosopher : philosophers) {
+            philosopher.tell(new LetsDinner(), ActorRef.noSender());
         }
 
-//        system.shutdown();
     }
 }
